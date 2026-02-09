@@ -39,6 +39,14 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+    
+class UserResponse(BaseModel):
+    id: int
+    email: str
+
+    class Config:
+        orm_mode = True
+
 
 # ---------- Routes ----------
 
@@ -83,3 +91,15 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
             await send_message(receiver_id, data)
     except WebSocketDisconnect:
         disconnect(user_id)
+@app.get("/users", response_model=list[UserResponse])
+def get_users(
+    exclude_user_id: int | None = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(User)
+
+    if exclude_user_id:
+        query = query.filter(User.id != exclude_user_id)
+
+    users = query.all()
+    return users
