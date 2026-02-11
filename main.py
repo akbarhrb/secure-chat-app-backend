@@ -8,6 +8,8 @@ from datetime import datetime
 from auth import hash_password, verify_password, create_token  # your existing auth utils
 from fastapi.staticfiles import StaticFiles
 import os
+import json
+from typing import Union, Optional, Any
 import shutil
 
 # ----------------- Database -----------------
@@ -57,9 +59,10 @@ class LoginRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    username: str  # Added
+    username: str
     email: str
-    last_message: str | None = None
+    public_key: Optional[str] = None  # Added: Crucial for ChatListScreen
+    last_message: Any | None = None   # Changed to Any to handle dicts
     last_message_at: datetime | None = None
 
     class Config:
@@ -68,19 +71,21 @@ class UserResponse(BaseModel):
 class MessageRequest(BaseModel):
     sender_id: int
     receiver_id: int
-    message: str
+    # message could be a plain string (old) or a dict (new encrypted format)
+    message: Union[str, dict]
 
 class MessageResponse(BaseModel):
     id: int
     sender_id: int
     receiver_id: int
-    message: str | None = None
+    # message is Any so it returns the JSON object directly to the frontend
+    message: Any | None = None 
     file_url: str | None = None
     message_type: str
     created_at: datetime
+    
     class Config:
-        orm_mode = True
-
+        from_attributes = True # updated from orm_mode (deprecated)
 # ----------------- App -----------------
 app = FastAPI()
 
@@ -104,6 +109,7 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 @app.post("/register")
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     # Check if email exists
+    print(data)
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -123,6 +129,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 
 @app.post("/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
+    print(data)
     # Look for the user where the input matches either email OR username
     user = db.query(User).filter(
         or_(User.email == data.email, User.username == data.email)
@@ -147,11 +154,26 @@ def get_users(exclude_user_id: int, db: Session = Depends(get_db)):
             )
         ).order_by(Message.created_at.desc()).first()
         
+        # Parse last_message if it's a JSON string
+        display_msg = None
+        if last_msg and last_msg.message:
+            try:
+                if last_msg.message.startswith('{'):
+                    # It's an encrypted JSON object
+                    parsed = json.loads(last_msg.message)
+                    # We send the whole object so the frontend can decrypt or mask it
+                    display_msg = parsed
+                else:
+                    display_msg = last_msg.message
+            except:
+                display_msg = last_msg.message
+
         response.append({
             "id": user.id,
-            "username": user.username,  # Added
+            "username": user.username,
             "email": user.email,
-            "last_message": last_msg.message if last_msg else None,
+            "public_key": user.public_key, # Pass this so ChatList can send it to ChatScreen
+            "last_message": display_msg,
             "last_message_at": last_msg.created_at if last_msg else None
         })
     
@@ -174,14 +196,30 @@ def get_messages(user_id: int, contact_id: int, db: Session = Depends(get_db)):
         ((Message.sender_id == user_id) & (Message.receiver_id == contact_id)) |
         ((Message.sender_id == contact_id) & (Message.receiver_id == user_id))
     ).order_by(Message.created_at).all()
+
+    # Convert stored JSON strings back into objects for the frontend
+    for m in msgs:
+        if m.message and isinstance(m.message, str) and m.message.startswith('{'):
+            try:
+                m.message = json.loads(m.message)
+            except:
+                pass
+    print(msgs[0].message)
     return msgs
 
 @app.post("/messages")
 def send_message_api(data: MessageRequest, db: Session = Depends(get_db)):
+    # If the message is a dictionary (from React Native JSON.stringify), 
+    # we store it as a string in the DB
+    stored_message = data.message
+    if isinstance(data.message, dict):
+        stored_message = json.dumps(data.message)
+
     msg = Message(
         sender_id=data.sender_id,
         receiver_id=data.receiver_id,
-        message=data.message
+        message=stored_message,
+        message_type="text"
     )
     db.add(msg)
     db.commit()
