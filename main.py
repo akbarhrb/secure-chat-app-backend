@@ -85,8 +85,11 @@ class AdminMessageResponse(BaseModel):
     id: int
     sender_id: int
     receiver_id: int
+    message: Optional[Any] = None
+    file_url: Optional[str] = None
+    encrypted_key: Optional[str] = None
+    iv: Optional[str] = None
     message_type: str
-    file_url: Optional[str]
     created_at: datetime
 
     class Config:
