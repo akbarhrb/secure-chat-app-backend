@@ -1,7 +1,10 @@
 import bcrypt
 from jose import jwt
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
-SECRET_KEY = "CHANGE_THIS_SECRET"
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
 def hash_password(password: str) -> str:

@@ -12,6 +12,11 @@ import json
 from sqlalchemy.orm import joinedload
 from typing import Union, Optional, Any
 import shutil
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BASE_URL = os.getenv("BASE_URL")
 
 # --- Import database and models ---
 from database import Base, engine, get_db
@@ -19,7 +24,6 @@ from models import User, Message
 
 # --- Create tables ---
 Base.metadata.create_all(bind=engine)
-
 
 # ----------------- Schemas -----------------
 
@@ -29,11 +33,9 @@ class RegisterRequest(BaseModel):
     password: str
     public_key: str
 
-
 class LoginRequest(BaseModel):
     email: str
     password: str
-
 
 class UserResponse(BaseModel):
     public_id: str
@@ -46,12 +48,10 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
 class MessageRequest(BaseModel):
     sender_public_id: str
     receiver_public_id: str
     message: Union[str, dict]
-
 
 class MessageResponse(BaseModel):
     id: int
@@ -81,7 +81,6 @@ class AdminUserResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
 class AdminMessageResponse(BaseModel):
     id: int
     sender_id: int
@@ -92,7 +91,6 @@ class AdminMessageResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 # ----------------- App -----------------
 
@@ -288,7 +286,7 @@ async def upload_file(
     if not sender or not receiver:
         raise HTTPException(status_code=404, detail="Sender or receiver not found")
 
-    # Save encrypted file
+    # Save encrypted file to storage
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     safe_filename = f"{timestamp}_{file.filename.replace(' ', '_')}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
@@ -296,7 +294,7 @@ async def upload_file(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    file_url = f"http://localhost:8000/uploads/{safe_filename}"
+    file_url = f"{BASE_URL}/uploads/{safe_filename}"
 
     # Save message in DB
     new_msg = Message(
@@ -322,7 +320,6 @@ async def upload_file(
 def admin_get_users(db: Session = Depends(get_db)):
     return db.query(User).order_by(User.id.desc()).all()
 
-
 @app.delete("/admin/users/{user_id}")
 def admin_delete_user(user_id: int, db: Session = Depends(get_db)):
 
@@ -339,11 +336,9 @@ def admin_delete_user(user_id: int, db: Session = Depends(get_db)):
 
     return {"status": "User deleted"}
 
-
 @app.get("/admin/messages", response_model=list[AdminMessageResponse])
 def admin_get_messages(db: Session = Depends(get_db)):
     return db.query(Message).order_by(Message.created_at.desc()).all()
-
 
 @app.delete("/admin/messages/{message_id}")
 def admin_delete_message(message_id: int, db: Session = Depends(get_db)):
@@ -356,7 +351,6 @@ def admin_delete_message(message_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "Message deleted"}
-
 
 @app.get("/admin/stats")
 def admin_stats(db: Session = Depends(get_db)):
